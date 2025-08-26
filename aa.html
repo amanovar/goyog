@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Gallery — Demo</title>
+  <meta name="description" content="Responsive PDF gallery with preview, download, and thumbnails using PDF.js" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <style>
+    :root{
+      --bg:#0b0f15;--card:#111827;--muted:#94a3b8;--text:#e5e7eb;--accent:#22d3ee;--accent-2:#60a5fa;
+      --radius:18px
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--text)}
+
+    header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,rgba(11,15,21,.9),rgba(11,15,21,.6) 60%,rgba(11,15,21,0));backdrop-filter:saturate(140%) blur(8px);}
+    .wrap{max-width:1100px;margin:auto;padding:16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    h1{font-size:clamp(20px,2.6vw,28px);margin:0;font-weight:700;letter-spacing:.2px}
+    .pill{border:1px solid #1f2937;border-radius:999px;padding:10px 14px;background:#0f172a;color:var(--muted)}
+    .search{flex:1;min-width:220px;display:flex;gap:10px}
+    .search input{flex:1;background:#0f172a;border:1px solid #1f2937;border-radius:999px;color:var(--text);padding:12px 14px;outline:none}
+    .btn{appearance:none;border:0;border-radius:999px;padding:10px 14px;font-weight:600;cursor:pointer}
+    .btn-ghost{background:#0f172a;border:1px solid #1f2937;color:#cbd5e1}
+    .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#0b1220}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:16px}
+    .card{background:linear-gradient(180deg,#0f172a,#0b1220);border:1px solid #1f2937;border-radius:var(--radius);overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.22)}
+    .thumb{position:relative;aspect-ratio:3/4;display:grid;place-items:center;background:#0b1220}
+    .thumb canvas,.thumb img{max-width:100%;max-height:100%}
+    .badge{position:absolute;top:8px;left:8px;background:rgba(2,6,23,.85);border:1px solid #172554;color:#a5b4fc;padding:4px 8px;border-radius:999px;font-size:12px}
+    .title{padding:12px 14px;font-weight:600}
+    .meta{padding:0 14px 12px;color:var(--muted);font-size:13px}
+    .actions{display:flex;gap:8px;padding:12px;border-top:1px solid #1f2937;background:#0b1220}
+    .actions a,.actions button{flex:1}
+
+    dialog{border:0;border-radius:20px;width:min(100vw,1000px);height:min(92vh,800px);padding:0;background:#0b1220;color:var(--text)}
+    dialog::backdrop{background:rgba(2,6,23,.55)}
+    .viewer-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #1f2937;background:#0f172a}
+    .viewer-body{height:calc(100% - 50px)}
+    .viewer-body iframe{border:0;width:100%;height:100%;background:#0b1220;display:block}
+
+    footer{color:#94a3b8;text-align:center;padding:24px}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="row">
+        <h1>📚 PDF Gallery</h1>
+        <span class="pill">Mobile‑friendly • Fast • No backend needed</span>
+        <div class="search" role="search">
+          <input id="q" placeholder="Search PDFs (title / tags)…" autocomplete="off" />
+          <button id="clear" class="btn btn-ghost" type="button">Clear</button>
+          <button id="add-demo" class="btn btn-primary" type="button" title="Add your own PDF by pasting a URL">Add PDF</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="grid" class="grid" aria-live="polite"></div>
+  </main>
+
+  <footer>
+    <small>Replace demo PDF links in <code>pdfList</code> with your own. Thumbnails are rendered via PDF.js on the fly.</small>
+  </footer>
+
+  <!-- Modal Viewer -->
+  <dialog id="viewer" aria-label="PDF viewer">
+    <div class="viewer-head">
+      <div style="display:flex;gap:10px;align-items:center">
+        <strong id="viewer-title">Preview</strong>
+        <a id="viewer-download" class="btn btn-primary" href="#" download>Download</a>
+      </div>
+      <button id="viewer-close" class="btn btn-ghost" aria-label="Close">✕</button>
+    </div>
+    <div class="viewer-body">
+      <iframe id="viewer-frame" title="PDF preview"></iframe>
+    </div>
+  </dialog>
+
+  <!-- PDF.js (lightweight build) -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.js" crossorigin="anonymous"></script>
+  <script>
+  const pdfList = [
+    { title: "Sample — Lorem Ipsum", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "132 KB", tags: ["sample","lorem","demo"] },
+    { title: "Markdown Guide (Cheat Sheet)", url: "https://www.markdownguide.org/assets/markdown-cheat-sheet.pdf", size: "100 KB", tags: ["docs","guide","markdown"] },
+    { title: "JavaScript ES6 Features", url: "https://web.stanford.edu/class/cs98si/ES6%20Features.pdf", size: "280 KB", tags: ["javascript","programming","es6"] }
+  ];
+
+  const grid = document.getElementById('grid');
+  const q = document.getElementById('q');
+  const clearBtn = document.getElementById('clear');
+  const addBtn = document.getElementById('add-demo');
+  const viewer = document.getElementById('viewer');
+  const viewerTitle = document.getElementById('viewer-title');
+  const viewerFrame = document.getElementById('viewer-frame');
+  const viewerClose = document.getElementById('viewer-close');
+  const viewerDownload = document.getElementById('viewer-download');
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.worker.min.js";
+
+  function formatTags(tags){ return tags && tags.length ? ` • ${tags.slice(0,3).join(', ')}` : ''; }
+
+  function createCard(item, index){
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.setAttribute('data-title', item.title.toLowerCase());
+    card.setAttribute('data-tags', (item.tags||[]).join(' ').toLowerCase());
+
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = `${index+1}`;
+    thumb.appendChild(badge);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 600; canvas.height = 800;
+    thumb.appendChild(canvas);
+
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = item.title;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = (item.size || '') + formatTags(item.tags||[]);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn btn-primary';
+    viewBtn.textContent = 'Preview';
+
+    const dl = document.createElement('a');
+    dl.className = 'btn btn-ghost';
+    dl.textContent = 'Download';
+    dl.href = item.url; dl.download = '';
+
+    actions.appendChild(viewBtn); actions.appendChild(dl);
+    card.appendChild(thumb); card.appendChild(title); card.appendChild(meta); card.appendChild(actions);
+
+    renderThumb(item.url, canvas).catch(()=>{
+      const fallback = document.createElement('img');
+      fallback.alt = 'PDF';
+      fallback.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<?xml version="1.0"?>\n<svg xmlns='http://www.w3.org/2000/svg' width='600' height='800'><rect width='100%' height='100%' fill='#0b1220'/><text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' fill='#a5b4fc' font-size='72'>📄</text><text x='50%' y='58%' dominant-baseline='middle' text-anchor='middle' fill='#94a3b8' font-size='22'>Preview Unavailable</text></svg>`);
+      canvas.replaceWith(fallback);
+    });
+
+    viewBtn.addEventListener('click', ()=>openViewer(item));
+
+    return card;
+  }
+
+  async function renderThumb(url, canvas){
+    const pdf = await pdfjsLib.getDocument({ url, useSystemFonts: true, standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/standard_fonts/" }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 0.6 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+  }
+
+  function renderGrid(list){
+    grid.innerHTML = '';
+    list.forEach((item, i)=> grid.appendChild(createCard(item,i)));
+  }
+
+  function filter(){
+    const term = q.value.trim().toLowerCase();
+    const cards = [...grid.children];
+    cards.forEach(card=>{
+      const t = card.getAttribute('data-title')||'';
+      const tags = card.getAttribute('data-tags')||'';
+      card.style.display = !term || t.includes(term) || tags.includes(term) ? '' : 'none';
+    });
+  }
+
+  function isMobile(){ return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent); }
+
+  async function openViewer(item){
+    viewerTitle.textContent = item.title;
+    viewerDownload.href = item.url;
+
+    viewerFrame.style.display = 'none';
+    let existingCanvas = viewer.querySelector('canvas');
+    if(existingCanvas) existingCanvas.remove();
+
+    if(isMobile()){
+      const canvas = document.createElement('canvas');
+      canvas.style.width='100%';
+      canvas.style.height='100%';
+      viewer.querySelector('.viewer-body').appendChild(canvas);
+
+      try {
+        const pdf = await pdfjsLib.getDocument({ url: item.url, useSystemFonts: true, standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/standard_fonts/" }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1 });
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport }).promise;
+      } catch(err){
+        canvas.replaceWith(document.createTextNode("Preview not available on mobile"));
+      }
+    } else {
+      viewerFrame.src = item.url;
+      viewerFrame.style.display = 'block';
+    }
+
+    viewer.showModal();
+  }
+
+  function closeViewer(){
+    const canvas = viewer.querySelector('canvas');
+    if(canvas) canvas.remove();
+    viewerFrame.src = 'about:blank';
+    viewerFrame.style.display = 'block';
+    viewer.close();
+  }
+
+  q.addEventListener('input', filter);
+  clearBtn.addEventListener('click', ()=>{ q.value=''; filter(); q.focus(); });
+  viewerClose.addEventListener('click', closeViewer);
+  viewer.addEventListener('close', closeViewer);
+
+  addBtn.addEventListener('click', ()=>{
+    const url = prompt('Paste PDF URL:');
+    if(!url) return;
+    const title = prompt('Title for this PDF:') || 'Untitled PDF';
+    pdfList.push({ title, url, size: '', tags: [] });
+    renderGrid(pdfList);
+    filter();
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  });
+
+  renderGrid(pdfList);
+  </script>
+</body>
+</html>
